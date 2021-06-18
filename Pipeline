@@ -1,0 +1,20 @@
+#!/bin/bash
+# Struct
+5ttgen fsl T1w_acpc_dc_restore_brain.nii.gz 5TT.mif -premasked
+5tt2vis 5TT.mif vis.mif
+labelconvert aaparc.a2009s+aseg.nii.gz FreeSurferColorLUT.txt fs_a2009s.txt nodes.mif
+labelsgmfix nodes.mif T1w_acpc_dc_restore_brain.nii.gz fs_a2009s.txt nodes_fixSGM.mif -premasked
+# Diff
+mrconvert data.nii.gz DWI.mif -fslgrad bvecs bvals -datatype float32 -strides 0,0,0,1
+dwiextract DWI.mif - -bzero | mrmath - mean meanb0.mif -axis 3
+dwi2response msmt_5tt DWI.mif 5TT.mif RF_WM.txt RF_GM.txt RF_CSF.txt -voxels RF_voxels.mif
+dwi2fod msmt_csd DWI.mif RF_WM.txt WM_FODs.mif RF_GM.txt GM.mif RF_CSF.txt CSF.mif -mask nodif_brain_mask.nii.gz
+mrconvert WM_FODs.mif - -coord 3 0 | mrcat CSF.mif GM.mif - tissueRGB.mif -axis 3
+# Genome
+tckgen WM_FODs.mif 2M.tck -act 5TT.mif -backtrack -crop_at_gmwmi -seed_dynamic WM_FODs.mif -maxlength 250 -select 2M -cutoff 0.06
+tcksift 2M.tck WM_FODs.mif 1M_SIFT.tck -act 5TT.mif -term_number 1M
+tck2connectome 1M_SIFT.tck nodes_fixSGM.mif connectome.csv -symmetric
+# Centroids
+spacing=$(mrinfo -spacing nodes_fixSGM.mif)
+labelstats -output centre -voxelspace nodes_fixSGM.mif > centroids_parc.txt
+awk 'OFS=" " {print $1=$1*a,$2=$2*a,$3=$3*a}' a=${spacing:0:20} centroids_parc.txt > centroids_parc_mm.txt
